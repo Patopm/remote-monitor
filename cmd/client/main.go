@@ -48,26 +48,31 @@ func tick() tea.Cmd {
 
 func listenForServers() tea.Cmd {
 	return func() tea.Msg {
-		addr, _ := net.ResolveUDPAddr("udp", ":9999")
-		conn, _ := net.ListenUDP("udp", addr)
+		// Escuchar en 0.0.0.0 permite recibir desde cualquier interfaz
+		addr, _ := net.ResolveUDPAddr("udp", "0.0.0.0:9999")
+		conn, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			return nil
+		}
 		defer func() {
-			err := conn.Close()
-			if err != nil {
-				log.Fatalf("Error al cerrar la conexión: %v", err)
+			if err := conn.Close(); err != nil {
+				log.Printf("Error al cerrar la conexion: %v", err)
+				return
 			}
 		}()
 
 		buf := make([]byte, 1024)
 		for {
-			n, rAddr, _ := conn.ReadFromUDP(buf)
-			var b protocol.ServerBeacon
-			err := json.Unmarshal(buf[:n], &b)
+			n, rAddr, err := conn.ReadFromUDP(buf)
 			if err != nil {
-				log.Fatalf("Error al deserializar conexiones: %v", err)
 				continue
 			}
-			b.Address = rAddr.IP.String() + b.TCPPort
-			return serverFoundMsg(b)
+			var b protocol.ServerBeacon
+			if err := json.Unmarshal(buf[:n], &b); err == nil {
+				// Usamos la IP real desde donde vino el paquete UDP
+				b.Address = rAddr.IP.String() + b.TCPPort
+				return serverFoundMsg(b)
+			}
 		}
 	}
 }

@@ -44,20 +44,19 @@ func main() {
 func getBroadcastAddr(port string) string {
 	ifaces, _ := net.Interfaces()
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, _ := iface.Addrs()
-		for _, addr := range addrs {
-			ipnet, ok := addr.(*net.IPNet)
-			if ok && ipnet.IP.To4() != nil {
-				ip := ipnet.IP.To4()
-				mask := ipnet.Mask
-				broadcast := net.IP(make([]byte, 4))
-				for i := range ip {
-					broadcast[i] = ip[i] | ^mask[i]
+		if iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0 {
+			addrs, _ := iface.Addrs()
+			for _, addr := range addrs {
+				if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+					ip := ipnet.IP.To4()
+					mask := ipnet.Mask
+					broadcast := net.IP(make([]byte, 4))
+					for i := range ip {
+						// IMPORTANTE: Aquí se calcula el 10.73.131.255
+						broadcast[i] = ip[i] | ^mask[i]
+					}
+					return broadcast.String() + port
 				}
-				return broadcast.String() + port
 			}
 		}
 	}

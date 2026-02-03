@@ -22,11 +22,13 @@ var baseStyle = lipgloss.NewStyle().
 	BorderForeground(lipgloss.Color("240"))
 
 type model struct {
-	table    table.Model
-	servers  map[string]string
-	mu       *sync.Mutex
-	selected string
-	sortBy   string
+	table      table.Model
+	servers    map[string]string
+	mu         *sync.Mutex
+	selected   string
+	sortBy     string
+	showModal  bool
+	modalIndex int
 }
 
 type (
@@ -71,28 +73,50 @@ func listenForServers() tea.Cmd {
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.mu.Lock()
+	serverIDs := make([]string, 0, len(m.servers))
+	for id := range m.servers {
+		serverIDs = append(serverIDs, id)
+	}
+	m.mu.Unlock()
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.showModal {
+			switch msg.String() {
+			case "up":
+				if m.modalIndex > 0 {
+					m.modalIndex--
+				}
+			case "down":
+				if m.modalIndex < len(serverIDs)-1 {
+					m.modalIndex++
+				}
+			case "enter":
+				if len(serverIDs) > 0 {
+					id := serverIDs[m.modalIndex]
+					m.selected = m.servers[id]
+					m.showModal = false
+				}
+			case "esc", "s":
+				m.showModal = false
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "1":
-			m.sortBy = "pid"
-		case "2":
-			m.sortBy = "name"
-		case "3":
-			m.sortBy = "cpu"
-		case "4":
-			m.sortBy = "mem"
+		case "1", "2", "3", "4":
+			keys := map[string]string{"1": "pid", "2": "name", "3": "cpu", "4": "mem"}
+			m.sortBy = keys[msg.String()]
 		case "s":
-			for _, addr := range m.servers {
-				m.selected = addr
-				break
-			}
+			m.showModal = true
+			m.modalIndex = 0
 		case "k":
 			if m.selected != "" {
 				s := m.table.SelectedRow()
 				m.sendCommand("STOP", s[0])
+
 			}
 		}
 	case serverFoundMsg:
@@ -176,15 +200,55 @@ func (m *model) sendCommand(action, value string) {
 	}
 }
 
+func (m *model) renderModal() string {
+	m.mu.Lock()
+	serverIDs := make([]string, 0, len(m.servers))
+	for id := range m.servers {
+		serverIDs = append(serverIDs, id)
+	}
+	m.mu.Unlock()
+
+	var content string
+	if len(serverIDs) == 0 {
+		content = "Buscando servidores..."
+	} else {
+		for i, id := range serverIDs {
+			cursor := " "
+			if m.modalIndex == i {
+				cursor = ">"
+			}
+			content += fmt.Sprintf("%s %s (%s)\n", cursor, id, m.servers[id])
+		}
+	}
+
+	modalStyle := lipgloss.NewStyle().
+		Width(40).
+		Padding(1).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Align(lipgloss.Center)
+
+	return modalStyle.Render("SELECCIONAR SERVIDOR\n\n" + content + "\n[Enter] Conectar [Esc] Cerrar")
+}
+
 func (m *model) View() string {
-	s := "Remote Process Monitor\n"
+	mainContent := "Remote Process Monitor\n"
 	m.mu.Lock()
 	serverCount := len(m.servers)
 	m.mu.Unlock()
-	s += fmt.Sprintf("Ordenado por: %s | Servidores: %d | Seleccionado: %s\n\n", m.sortBy, serverCount, m.selected)
+
+	s := fmt.Sprintf("Ordenado por: %s | Servidores: %d | Seleccionado: %s\n\n", m.sortBy, serverCount, m.selected)
 	s += baseStyle.Render(m.table.View()) + "\n"
-	s += "\n[1-4] Ordenar (PID, Nom, CPU, Mem) | [s] Conectar | [k] Kill Process | [q] Quit\n"
-	return s
+	s += "\n[1-4] Ordenar | [s] Servidores | [k] Kill | [q] Quit\n"
+
+	fullView := mainContent + s
+
+	if m.showModal {
+		modal := m.renderModal()
+		return lipgloss.Place(80, 20, lipgloss.Center, lipgloss.Center, modal, lipgloss.WithWhitespaceChars(" "))
+	}
+
+	return fullView
 }
 
 func main() {

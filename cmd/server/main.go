@@ -41,34 +41,47 @@ func main() {
 	}
 }
 
+func getBroadcastAddr(port string) string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "255.255.255.255" + port
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				ip := ipnet.IP.To4()
+				mask := ipnet.Mask
+				broadcast := net.IP(make([]byte, 4))
+				for i := range ip {
+					broadcast[i] = ip[i] | ^mask[i]
+				}
+				return broadcast.String() + port
+			}
+		}
+	}
+	return "255.255.255.255" + port
+}
+
 func startDiscoveryBeacon(udpPort, tcpPort string) {
-	addr, _ := net.ResolveUDPAddr("udp", "255.255.255.255"+udpPort)
+	broadcastTarget := getBroadcastAddr(udpPort)
+	fmt.Printf("Enviando beacons a: %s\n", broadcastTarget)
+
+	addr, _ := net.ResolveUDPAddr("udp", broadcastTarget)
 	conn, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
 		log.Printf("Error UDP: %v", err)
 		return
 	}
-
-	defer func() {
-		err := conn.Close()
-		if err != nil {
-			log.Fatalf("Error al cerrar la conexión: %v", err)
-		}
-	}()
-
 	hostname, _ := os.Hostname()
-	beacon := protocol.ServerBeacon{
-		ID:      hostname,
-		TCPPort: tcpPort,
-	}
-	data, _ := json.Marshal(beacon)
 
 	for {
-		_, err := conn.Write(data)
-		if err != nil {
-			log.Printf("Error enviando beacon: %v", err)
+		beacon := protocol.ServerBeacon{ID: hostname, TCPPort: tcpPort}
+		data, _ := json.Marshal(beacon)
+		if _, err := conn.Write(data); err != nil {
+			log.Fatalf("Error al hacer broadcast: %v", err)
 		}
-		time.Sleep(3 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
 }
 

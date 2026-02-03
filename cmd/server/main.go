@@ -42,14 +42,15 @@ func main() {
 }
 
 func getBroadcastAddr(port string) string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "255.255.255.255" + port
-	}
-
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
+	ifaces, _ := net.Interfaces()
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if ok && ipnet.IP.To4() != nil {
 				ip := ipnet.IP.To4()
 				mask := ipnet.Mask
 				broadcast := net.IP(make([]byte, 4))

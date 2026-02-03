@@ -1,0 +1,7 @@
+/bin/
+/client
+/server
+*.exe
+*.test
+.vscode/
+go.sum

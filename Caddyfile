@@ -1,0 +1,16 @@
+localhost {
+	# Redirigir el tráfico de la API a nuestro Middleware en Go
+	handle /api/* {
+		reverse_proxy localhost:8080
+	}
+
+	# Redirigir el WebSocket al Middleware
+	handle /ws/* {
+		reverse_proxy localhost:8080
+	}
+
+	# El resto del tráfico irá a tu futuro frontend (TanStack Start suele usar el puerto 3000)
+	handle {
+		reverse_proxy localhost:3000
+	}
+}
